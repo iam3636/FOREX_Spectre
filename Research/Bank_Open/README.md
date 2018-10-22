@@ -9,7 +9,7 @@ Credit to Ryan (ryan@thestreets.co) for outlining this concept to me in his exce
 
 The intution of this is quite important. Opening of major bank sessions welcomes a flood of volume in currency movement, whose suddeness could create a quick price shift in either direction.
 
-## Creating the Backtest
+## Creating the Signal
 
 1. Break up the time series into windows, so only ever dealing with a specific window (Bank open to 2 hours before next open session)
 

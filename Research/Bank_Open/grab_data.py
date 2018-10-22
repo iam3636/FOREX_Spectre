@@ -1,4 +1,5 @@
 from ib_insync import *
+# Need to have IB Gateway open to execute
 # util.startLoop()  # uncomment this line when in a notebook
 
 ib = IB()
