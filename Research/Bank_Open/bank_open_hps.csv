@@ -46,7 +46,7 @@ def set_stop_orders(df):
 
 def drawdown(series):
     '''
-    This function takes the running max drawdown of a series of returns
+    Thsi function takes the running max drawdown of a series of returns
     input series: pandas series, floats
     return series: pandas series, floats, drawdown
     '''
@@ -96,8 +96,12 @@ open_time_gmt = london_open_gmt
 df = set_utc_time(data_file, open_time_gmt)
 df['returns'] = df.eval('close - open').divide(df['open'])
 df = set_stop_orders(df)
-sl = 0.00603
-temp_df = set_trailing_stop(df, stop_loss=sl)
-temp_df['EUR/USD'] = (temp_df['returns'] + 1).cumprod()
-temp_df['Strategy'] = (temp_df.eval('returns * signal') + 1).cumprod()
-temp_df.to_csv('strat_results.csv', index=False)
+sl_list = np.linspace(0.005, 0.008, 100)
+ret_list = []
+for sl in sl_list:
+    print(sl)
+    temp_df = set_trailing_stop(df, stop_loss=sl)
+    ret_list.append((temp_df.eval('returns * signal') + 1).prod())
+out_df = pd.DataFrame({'Stop_Loss': sl_list, 'Returns': ret_list})
+print(out_df.head())
+out_df.to_csv('narrow_results.csv', index=False)
