@@ -1,5 +1,7 @@
 # Ian Added
 .DS_store
+*.swp
+*.csv
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
