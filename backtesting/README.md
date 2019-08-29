@@ -1,33 +1,36 @@
-# Purpose
+# Spectre Engineering Backtesting
 
-The purpose of this project is to further gain familiarity with the C programming language. I found that doing so in an arena I enjoy will enhance the experience
+## Standards
 
-## Goal
+Backtesting will be conducted with 1 year of training data, 1 month cross-validation set, and 1 month test. For example, if a backtest is being run in September 2019, the data will be broken down
 
-Create a C-based package that can be called upon by a python script to create a backtest report on a time series of prices. 
+| Window                | Set       |
+| --------------------- | --------- |
+| July 2018 - June 2019 | Training  |
+| July 2019             | Cross-Val |
+| August 2019           | Test      |
 
-### Input
+A successful backtest entails surpassing the following standards for each metric in all three sets of data.
 
-A CSV file with headers `date,open,alloc` referencing the price of the asset at the beginning of the time stamp and the allocation [-1,1] of portfolio after observing that price. 
+| Metric                       | Standard |
+| ---------------------------- | -------- |
+| Returns (with trading costs) | > 0      |
+| Sharpe Ratio                 | > 1      |
+| Sciorintino Ratio            | > 1      |
+| Max Drawdown                 | < 20%    |
+| Accuracy                     | > 50%    |
 
-### Output
+If backtesting is successful, the algorithm will be deployed to paper trading for further trials.
 
-A `metrics.json` with a series of metrics listed below, plus a `return_series.csv` with the headers `date,open,alloc,return,cum_return`. 
+Note: Before backtesting, algorithms will be executed over a randomized time series to ensure there is no-look ahead bias, yes this will be contained in the development phase.
 
-```json
-{
-    num_steps: Number of Observed Time Steps Passed, 
-	sharpe: Sharpe Ratio, 
-	scorinino: Scorintino Ratio,
-	md: Max Drawdown, 
-	return: Overall Return [-1, inf),
-	acc: Accuracy,
-}
-```
+### Metrics Explained
 
-## Metrics
+#### Returns with Trading Costs
 
-### Sharpe Ratio
+This is the 
+
+#### Sharpe Ratio
 
 The Sharpe is the industry standard measure for risk-adjusted returns
 
@@ -43,7 +46,7 @@ This is a spin on the Sharpe ratio where instead the denominator is $\sigma_d$, 
 
 The largest loss of value over the time period in question.
 
-## Calculations
+### Calculations
 
 Consider the series of $o_0, o_1, \dots, o_n  $ where there are $n+1$ time steps observed over the course of a month, where at each period we allocated $a_0, a_1, \dots, a_n$.  Lets say the 1-month LIBOR rate for that period was 0.022 (as it was on October 4, 2018). 
 
@@ -97,7 +100,4 @@ cum_return = (1 + returns).cumprod() - 1
 md = (rolling_max - cum_return).divide(rolling_max).max()
 ```
 
-
-
-## Comparison to Python Implementation with Pandas
 
