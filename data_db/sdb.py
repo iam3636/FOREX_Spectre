@@ -107,7 +107,7 @@ def date_encoder(df):
     output: pandas dataframe with additional columns ['weekday', 'day_of_year'
             'year', 'month', 'day', 'hour', 'minute']
     '''
-    df['date'] = pd.to_datetime(df['date'].head())
+    df['date'] = pd.to_datetime(df['date'])
     df['weekday'] = df['date'].apply(lambda x: x.weekday())
     df['day_of_year'] = df['date'].apply(lambda x: x.dayofyear)
     df['year'] = df['date'].apply(lambda x: x.year)
