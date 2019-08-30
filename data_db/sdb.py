@@ -1,6 +1,10 @@
 import pandas as pd
 import sqlalchemy as sa
 
+#TODO: Make so that duplicates are not uploaded to DB (maybe a group by, or a query before uploa?
+#TODO: Upload data with epoch, hour, day of week, minute, second, year, month
+#TODO: Make query data function
+
 def instantiate_engine(json_path, key_name):
     '''
     :return engine: sqlalchemy engine for colornoun database
@@ -23,8 +27,80 @@ def instantiate_engine(json_path, key_name):
     conn = engine.connect()
     return engine,conn
 
+def parse_df(df, num_rows = 10000):
+    '''
+    Meant to parse pandas dataframe before upload. SQL connection times out if uploading more than
+    25k rows.
+    :param df: pandas datatframe
+    :param num_rows: number of rows for dataframe to be split into
+    :return:
+    '''
+    df_list = list()
+    num_split = len(df) // num_rows + 1
+    for i in range(num_split):
+        df_list.append(df[i*num_rows:(i+1)*num_rows])
+    return df_list
+
+def upload_df_to_db(df, table_name, engine):
+    '''
+    This is to help the parsing and uploading of pandas dataframes
+    :param df: pandas dataframe
+    :param table_name: name of table on database
+    :param engine: sqlalchemy engine
+    '''
+    df_list = parse_df(df)
+    for upload_df in df_list:
+        try:
+            upload_df.to_sql(table_name, con=engine, index=False, if_exists='append')
+            print('Success')
+        except Exception as e:
+            print('Failure')
+            print(e)
+
+def grab_IB_data(currency_pair='EURUSD', endDateTime='', durationStr='30 D',
+        barSizeSetting='1 hour', whatToShow='MIDPOINT'):
+    '''
+    param currency_pair: string
+    param endDateTime:  string,  Can be set to ‘’ to indicate the current time, 
+                        or it can be given as a datetime.date or datetime.datetime,
+                        or it can be given as a string in ‘yyyyMMdd HH:mm:ss’ format.
+                        If no timezone is given then the TWS login timezone is used.
+    param durationStr: str, Time span of all the bars. Examples: ‘60 S’, ‘30 D’, ‘13 W’,
+                        ‘6 M’, ‘10 Y’.
+    param barSizeSetting: str, Time period of one bar. Must be one of: ‘1 secs’, ‘5 secs’, 
+                        ‘10 secs’ 15 secs’, ‘30 secs’, ‘1 min’, ‘2 mins’, ‘3 mins’, ‘5 mins’,
+                        ‘10 mins’, ‘15 mins’, ‘20 mins’, ‘30 mins’, ‘1 hour’, ‘2 hours’,
+                        ‘3 hours’, ‘4 hours’, ‘8 hours’, ‘1 day’, ‘1 week’, ‘1 month’.
+    param whatToShow: str, Specifies the source for constructing bars. 
+                    Must be one of: ‘TRADES’, ‘MIDPOINT’, ‘BID’, ‘ASK’, ‘BID_ASK’,
+                    ‘ADJUSTED_LAST’, ‘HISTORICAL_VOLATILITY’, ‘OPTION_IMPLIED_VOLATILITY’,
+                    ‘REBATE_RATE’, ‘FEE_RATE’, ‘YIELD_BID’, ‘YIELD_ASK’, ‘YIELD_BID_ASK’,
+                    ‘YIELD_LAST’.
+    return: pandas dataframe with no index and columns
+            ['date', 'open', 'high', 'low', 'close']
+            date is UTC
+
+    note: Need to have IB Gateway open to execute
+    '''
+    #from ib_insync import *
+    from ib_insync import IB, Forex, util
+    ib = IB()
+    ib.connect('127.0.0.1', 7497, clientId=1)
+    contract = Forex(currency_pair)
+    bars = ib.reqHistoricalData(contract, endDateTime, durationStr,
+                    barSizeSetting, whatToShow, useRTH=True, formatDate=2)
+    '''
+    useRTH (bool) – If True then only show data from within Regular Trading Hours,
+            if False then show all data.
+    formatDate (int) – For an intraday request setting to 2 will cause the returned
+            date fields to be timezone-aware datetime.datetime with UTC timezone,
+            instead of local timezone as used by TWS.
+    '''
+    # convert to pandas dataframe:
+    df = util.df(bars)
+    return df[['date', 'open', 'high', 'low', 'close']].copy()
+
 #TODO: Convert for Forex purposes
-'''
 def query_raw_data(coin,columns,first_epoch,last_epoch, conn, normalize=True, norm_min=10000):
     '''
     :param coin: string, coin ticker
@@ -75,40 +151,8 @@ def query_raw_data(coin,columns,first_epoch,last_epoch, conn, normalize=True, no
             df['volume'].rolling(norm_min).std())
     df.dropna(inplace=True)
     return df[columns].copy()
-'''
-
-def parse_df(df, num_rows = 10000):
-    '''
-    Meant to parse pandas dataframe before upload. SQL connection times out if uploading more than
-    25k rows.
-    :param df: pandas datatframe
-    :param num_rows: number of rows for dataframe to be split into
-    :return:
-    '''
-    df_list = list()
-    num_split = len(df) // num_rows + 1
-    for i in range(num_split):
-        df_list.append(df[i*num_rows:(i+1)*num_rows])
-    return df_list
-
-def upload_df_to_db(df, table_name, engine):
-    '''
-    This is to help the parsing and uploading of pandas dataframes
-    :param df: pandas dataframe
-    :param table_name: name of table on database
-    :param engine: sqlalchemy engine
-    '''
-    df_list = parse_df(df)
-    for upload_df in df_list:
-        try:
-            upload_df.to_sql(table_name, con=engine, index=False, if_exists='append')
-            print('Success')
-        except Exception as e:
-            print('Failure')
-            print(e)
 
 #TODO: Convert for Forex purposes
-'''
 def get_last_epoch_binance_raw_data(coin,conn):
     '''
     This is meant to help uploading the raw historic data to the colornoun db
@@ -126,10 +170,8 @@ def get_last_epoch_binance_raw_data(coin,conn):
     except:
         last_epoch = 1500004800000
     return last_epoch
-'''
 
 #TODO: Convert for Forex purposes
-'''
 def get_data_gaps(input_df):
     '''
     This is meant to find any breaks in the data coverages
@@ -145,8 +187,8 @@ def get_data_gaps(input_df):
     missing_data = df.loc[df['diff'] > 60000].copy()
     
     return list(zip(missing_data.prev.astype(int), missing_data.open_time.astype(int)))
-'''
 
+#TODO: Convert for Forex purposes
 def grab_data(conn,coins, start_epoch, end_epoch, data_list):
     '''
     This returns a dataframe of the requested data
