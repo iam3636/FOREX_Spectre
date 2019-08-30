@@ -10,6 +10,8 @@ df = sdb.grab_IB_data(endDateTime= '',
 
 print(df.head())
 
+df.to_csv('scratch.csv', index=False)
+
 '''
 filename = 'scratch.csv'
 

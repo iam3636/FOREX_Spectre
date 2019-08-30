@@ -100,6 +100,23 @@ def grab_IB_data(currency_pair='EURUSD', endDateTime='', durationStr='30 D',
     df = util.df(bars)
     return df[['date', 'open', 'high', 'low', 'close']].copy()
 
+def date_encoder(df):
+    '''
+    input df: pandas dataframe with column 'date' in timezone-aware datetime.datetime
+            example('2019-08-28 21:15:00+00:00')
+    output: pandas dataframe with additional columns ['weekday', 'day_of_year'
+            'year', 'month', 'day', 'hour', 'minute']
+    '''
+    df['date'] = pd.to_datetime(df['date'].head())
+    df['weekday'] = df['date'].apply(lambda x: x.weekday())
+    df['day_of_year'] = df['date'].apply(lambda x: x.dayofyear)
+    df['year'] = df['date'].apply(lambda x: x.year)
+    df['month'] = df['date'].apply(lambda x: x.month)
+    df['day_of_month'] = df['date'].apply(lambda x: x.day)
+    df['hour'] = df['date'].apply(lambda x: x.hour)
+    df['minute'] = df['date'].apply(lambda x: x.minute)
+    return df
+
 #TODO: Convert for Forex purposes
 def query_raw_data(coin,columns,first_epoch,last_epoch, conn, normalize=True, norm_min=10000):
     '''
