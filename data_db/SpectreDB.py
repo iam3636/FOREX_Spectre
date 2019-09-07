@@ -1,12 +1,8 @@
 import json
 import os
-import pandas
+import pandas as pd
 import sqlalchemy as sa
 
-#TODO: Make so that duplicates are not uploaded to DB (maybe a group by, or a query before uploa?
-#TODO: Make query data function
-
-#TODO: Make Class
 
 class SpectreDB:
 
@@ -50,15 +46,34 @@ class SpectreDB:
             df_list.append(df[i*num_rows:(i+1)*num_rows])
         return df_list
 
-    def upload_df_to_db(self, df, table_name=None):
+    def filter_duplicates(self, upload_df, table_name):
+        '''
+        :param upload_df: pandas dataframe with column 'date'
+        :param table_name: string
+        return: upload_df without columns already in table
+        '''
+        #Query dates in table of that time frame
+        #Filter upload df of overlaping timestamps
+        start = str(upload_df['date'].min())
+        end = str(upload_df['date'].max())
+        date_df = self.query_by_date(start, end, table_name, fields=['date'])
+        out_df = upload_df.append(date_df, ignore_index=True, sort=False)
+        out_df.drop_duplicates(['date'], keep=False, inplace=True)
+        return out_df
+
+    def upload_df_to_db(self, df, table_name=None, date_encode=False):
         '''
         This is to help the parsing and uploading of pandas dataframes
         :param df: pandas dataframe
         :param table_name: name of table on database
-        :param engine: sqlalchemy engine
         '''
         if not table_name:
             table_name = self.table_name
+        if date_encode:
+            df = self.date_encoder(df)
+        df.drop_duplicates(['date'], inplace=True)
+        if sa.inspect(self.engine).get_table_names().count(table_name) > 0:
+            df = self.filter_duplicates(df,table_name)
         df_list = SpectreDB.parse_df(df)
         for upload_df in df_list:
             try:
@@ -112,7 +127,7 @@ class SpectreDB:
         df = util.df(bars)
         return df[['date', 'open', 'high', 'low', 'close']].copy()
 
-    def date_encoder(df):
+    def date_encoder(self, df):
         '''
         input df: pandas dataframe with column 'date' in timezone-aware datetime.datetime
                 example('2019-08-28 21:15:00+00:00')
@@ -129,3 +144,53 @@ class SpectreDB:
         df['minute'] = df['date'].apply(lambda x: x.minute)
         return df
 
+    def drop_table(self, table_name=None):
+        if not table_name:
+            table_name = self.table_name
+        self.conn.execute("DROP TABLE {}".format(table_name))
+
+    def query_by_date(self, start, end, table_name=None, fields=['date', 'close']):
+        '''
+        This returns a dataframe of the requested data
+        :param start: string in datetime format, eg. '2019-07-18 17:15:00'
+        :param end: same format as start
+        :param data: list of strings
+        :return: pandas dataframe
+        '''
+        if not table_name:
+            table_name = self.table_name
+        # query data and save file
+        fields.append('date')
+        #make sure no duplicate entries in data list
+        fields = list(set(fields))
+        out_df = pd.DataFrame()
+        stmt = 'SELECT ' + ','.join(map(str, list(fields)))
+        stmt += ''' FROM `{}` '''.format(table_name) 
+        stmt += '''WHERE `date` BETWEEN '{}' AND '{}' '''.format(start, end)
+        return pd.read_sql(stmt, self.conn)
+
+    #TODO: Finish this function
+    def parse_datetime(self,start, end):  
+        '''
+        :param start: string in datetime format, eg. '2019-07-18 17:15:00'
+        :param end: same format as start
+        returns list of tuples (end, duration) for requesting IB data
+        '''
+        return 
+
+
+    def update_from_IB(self, start, end, market='EURUSD', freq='1 hour') 
+        from ib_insync import *
+        # Need to have IB Gateway open to execute
+        # util.startLoop()  # uncomment this line when in a notebook
+
+        ib = IB()
+        ib.connect('127.0.0.1', 7497, clientId=1)
+        contract = Forex(market)
+        bars = ib.reqHistoricalData(contract, endDateTime='', durationStr='30 D',
+                        barSizeSetting='1 hour', whatToShow='MIDPOINT', useRTH=True)
+
+        # convert to pandas dataframe:
+        df = util.df(bars)
+
+#TODO: Pull from IB and upload to db
