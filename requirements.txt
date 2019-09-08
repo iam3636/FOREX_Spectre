@@ -1,2 +1,4 @@
 ib_insync
 pandas
+pymysql
+sqlalchemy
