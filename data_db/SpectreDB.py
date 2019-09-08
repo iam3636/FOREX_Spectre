@@ -1,3 +1,4 @@
+import datetime as dt
 import json
 import os
 import pandas as pd
@@ -6,12 +7,19 @@ import sqlalchemy as sa
 
 class SpectreDB:
 
-    def __init__(self, json_path=None, key_name=None, table_name=None):
+    def __init__(self, json_path=None, key_name=None, table_name=None,
+            use_IB=False):
         self.json_path = json_path
         self.key_name = key_name
         if table_name:
             self.table_name = table_name
         SpectreDB.instantiate_engine(self)
+        if use_IB:
+            from ib_insync import IB, Forex, util
+            # Need to have IB Gateway open to execute
+            # util.startLoop()  # uncomment this line when in a notebook
+            self.ib = IB()
+            self.ib.connect('127.0.0.1', 7497, clientId=1)
 
     def instantiate_engine(self):
         '''
@@ -84,49 +92,6 @@ class SpectreDB:
                 print(e)
         return 1
 
-    def grab_IB_data(currency_pair='EURUSD', endDateTime='', durationStr='30 D',
-            barSizeSetting='1 hour', whatToShow='MIDPOINT'):
-        '''
-        param currency_pair: string
-        param endDateTime:  string,  Can be set to ‘’ to indicate the current time, 
-                            or it can be given as a datetime.date or datetime.datetime,
-                            or it can be given as a string in ‘yyyyMMdd HH:mm:ss’ format.
-                            If no timezone is given then the TWS login timezone is used.
-        param durationStr: str, Time span of all the bars. Examples: ‘60 S’, ‘30 D’, ‘13 W’,
-                            ‘6 M’, ‘10 Y’.
-        param barSizeSetting: str, Time period of one bar. Must be one of: ‘1 secs’, ‘5 secs’, 
-                            ‘10 secs’ 15 secs’, ‘30 secs’, ‘1 min’, ‘2 mins’, ‘3 mins’, ‘5 mins’,
-                            ‘10 mins’, ‘15 mins’, ‘20 mins’, ‘30 mins’, ‘1 hour’, ‘2 hours’,
-                            ‘3 hours’, ‘4 hours’, ‘8 hours’, ‘1 day’, ‘1 week’, ‘1 month’.
-        param whatToShow: str, Specifies the source for constructing bars. 
-                        Must be one of: ‘TRADES’, ‘MIDPOINT’, ‘BID’, ‘ASK’, ‘BID_ASK’,
-                        ‘ADJUSTED_LAST’, ‘HISTORICAL_VOLATILITY’, ‘OPTION_IMPLIED_VOLATILITY’,
-                        ‘REBATE_RATE’, ‘FEE_RATE’, ‘YIELD_BID’, ‘YIELD_ASK’, ‘YIELD_BID_ASK’,
-                        ‘YIELD_LAST’.
-        return: pandas dataframe with no index and columns
-                ['date', 'open', 'high', 'low', 'close']
-                date is UTC
-
-        note: Need to have IB Gateway open to execute
-        '''
-        #from ib_insync import *
-        from ib_insync import IB, Forex, util
-        ib = IB()
-        ib.connect('127.0.0.1', 7497, clientId=1)
-        contract = Forex(currency_pair)
-        bars = ib.reqHistoricalData(contract, endDateTime, durationStr,
-                        barSizeSetting, whatToShow, useRTH=True, formatDate=2)
-        '''
-        useRTH (bool) – If True then only show data from within Regular Trading Hours,
-                if False then show all data.
-        formatDate (int) – For an intraday request setting to 2 will cause the returned
-                date fields to be timezone-aware datetime.datetime with UTC timezone,
-                instead of local timezone as used by TWS.
-        '''
-        # convert to pandas dataframe:
-        df = util.df(bars)
-        return df[['date', 'open', 'high', 'low', 'close']].copy()
-
     def date_encoder(self, df):
         '''
         input df: pandas dataframe with column 'date' in timezone-aware datetime.datetime
@@ -169,28 +134,80 @@ class SpectreDB:
         stmt += '''WHERE `date` BETWEEN '{}' AND '{}' '''.format(start, end)
         return pd.read_sql(stmt, self.conn)
 
-    #TODO: Finish this function
-    def parse_datetime(self,start, end):  
+    def parse_datetime(self, start, end, freq):  
         '''
         :param start: string in datetime format, eg. '2019-07-18 17:15:00'
         :param end: same format as start
-        returns list of tuples (end, duration) for requesting IB data
+        :param freq: string, format '# timeUnit' e.g. '1 hour'
+        returns list of tuples (end[datetime], duration[str]) for requesting IB data
         '''
-        return 
+        #Change the string declared frequency to timedelta object
+        freq_unit = freq.split()[1][0]
+        if freq_unit == 's':
+            max_dur = dt.timedelta(days=1)
+        elif freq_unit == 'm':
+            if(freq.split()[1][1]) == 'i':
+                max_dur = dt.timedelta(weeks=1)
+            else:
+                max_dur = dt.timedelta(weeks=104)
+        elif freq_unit == 'h':
+            max_dur = dt.timedelta(weeks=4)
+        elif freq_unit == 'd':
+            max_dur = dt.timedelta(weeks=24)
+        elif freq_unit == 'w':
+            max_dur = dt.timedelta(weeks=104)
+        else:
+            raise(RuntimeError(''' Incorrect input for 'freq' argument'''))
+        out_list = []
+        start = dt.datetime.strptime(start + ' +0000', '%Y-%m-%d %H:%M:%S %z')
+        end = dt.datetime.strptime(end + ' +0000', '%Y-%m-%d %H:%M:%S %z')
+        t_diff = end - start
+        window_count = t_diff // max_dur
+        max_dur_str = '{} D'.format(max(1, max_dur.days))
+        while window_count > 0:
+            out_list.append((end,max_dur_str))
+            end -= max_dur
+            window_count -= 1
+        leftover_time = end - start
+        out_list.append((end, '{} D'.format(max(1, 1 + leftover_time.days))))
+        return out_list
 
+    def pull_from_IB(self, start, end, market='EURUSD', freq='1 hour'): 
+        '''
+        Note, all times should be UTC (aka Zulu, Z, GMT)
 
-    def update_from_IB(self, start, end, market='EURUSD', freq='1 hour') 
-        from ib_insync import *
-        # Need to have IB Gateway open to execute
-        # util.startLoop()  # uncomment this line when in a notebook
-
-        ib = IB()
-        ib.connect('127.0.0.1', 7497, clientId=1)
+        :param start: string in datetime format, eg. '2019-07-18 17:15:00'
+        :param end: same format as start
+        :param freq: Must be one of: ‘1 secs’, ‘5 secs’, ‘10 secs’ 15 secs’, 
+                ‘30 secs’, ‘1 min’, ‘2 mins’, ‘3 mins’, ‘5 mins’, ‘10 mins’,
+                ‘15 mins’, ‘20 mins’, ‘30 mins’, ‘1 hour’, ‘2 hours’, 
+                ‘3 hours’, ‘4 hours’, ‘8 hours’, ‘1 day’, ‘1 week’,
+                ‘1 month’ (see IB Docs)
+        '''
+        #Parse the requested window so API calls are not as lengthy
+        time_list = self.parse_datetime(start, end, freq)
+        df_list = []
         contract = Forex(market)
-        bars = ib.reqHistoricalData(contract, endDateTime='', durationStr='30 D',
-                        barSizeSetting='1 hour', whatToShow='MIDPOINT', useRTH=True)
+        for time_pair in time_list:
+            '''
+            useRTH (bool) – If True then only show data from within Regular Trading Hours,
+                    if False then show all data.
+            formatDate (int) – For an intraday request setting to 2 will cause the returned
+                    date fields to be timezone-aware datetime.datetime with UTC timezone,
+                    instead of local timezone as used by TWS.
+            '''
+            bars = self.ib.reqHistoricalData(contract, endDateTime=time_pair[0], 
+                                        durationStr=time_pair[1],
+                                        barSizeSetting=freq, whatToShow='MIDPOINT', useRTH=True)
 
-        # convert to pandas dataframe:
-        df = util.df(bars)
+            # convert to pandas dataframe:
+            df = util.df(bars)
+            #drop columns ['barCount', 'average']
+            df_list.append(df[['date', 'open', 'high', 'low', 'close']].copy())
+        return df_list
 
-#TODO: Pull from IB and upload to db
+    def update_from_IB(self, start, end, market='EURUSD', freq='1 hour'): 
+        df_list = self.pull_from_IB(start, end, market, freq) 
+        for df in df_list:
+            self.upload_df_to_db(df, date_encode=True)
+        return 1
